@@ -56,7 +56,7 @@
 #include <asm/uaccess.h>	/* copy_*_user() functions */
 #include <asm/page.h>		/* PAGE_SIZE */
 
-#include "kbus_defns.h"
+#include <linux/kbus_defns.h>
 
 /*
  * KBUS can support multiple devices, as /dev/kbus<N>. These all have
