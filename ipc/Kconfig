@@ -11,3 +11,26 @@ menuconfig KBUS
 	This support can also be built as a module. If so, the module
 	will be called kbus.
 
+config KBUS_DEBUG
+	bool "Make KBUS debugging messages available"
+	depends on KBUS
+	default y
+	---help---
+	This is the master switch for KBUS debug kernel messages -
+	if turned off, all debug messages will be compiled out.
+
+	In order for debugging messages to be emitted, they must
+	be enabled per-device with the KBUS_IOC_VERBOSE ioctl,
+	or by default by CONFIG_KBUS_DEBUG_DEFAULT_VERBOSE.
+
+	If unsure, say Y.
+
+config KBUS_DEBUG_DEFAULT_VERBOSE
+	bool "Output KBUS debug messages by default"
+	depends on KBUS_DEBUG
+	default n
+	---help---
+	If set, all KBUS devices will emit debugging messages by default.
+	They may be turned off per-device at runtime with the
+	KBUS_IOC_VERBOSE ioctl.
+
