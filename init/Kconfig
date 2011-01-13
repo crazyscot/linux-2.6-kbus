@@ -1188,18 +1188,7 @@ config TRACEPOINTS
 
 source "arch/Kconfig"
 
-config KBUS
-        tristate "KBUS messaging system"
-        default m
-        ---help---
-          KBUS is a lightweight messaging system, particularly aimed
-          at embedded platforms. This option provides the kernel support
-          for mediating messages between clients.
-
-          If you want KBUS support, you should say Y here.
-
-          This support can also be built as a module. If so, the module
-          will be called kbus.
+source "ipc/Kconfig"
 
 endmenu		# General setup
 
