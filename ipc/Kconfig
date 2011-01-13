@@ -1,4 +1,4 @@
-menuconfig KBUS
+config KBUS
         tristate "KBUS messaging system"
         default m
         ---help---
@@ -11,9 +11,10 @@ menuconfig KBUS
 	This support can also be built as a module. If so, the module
 	will be called kbus.
 
+if KBUS
+
 config KBUS_DEBUG
 	bool "Make KBUS debugging messages available"
-	depends on KBUS
 	default y
 	---help---
 	This is the master switch for KBUS debug kernel messages -
@@ -33,4 +34,26 @@ config KBUS_DEBUG_DEFAULT_VERBOSE
 	If set, all KBUS devices will emit debugging messages by default.
 	They may be turned off per-device at runtime with the
 	KBUS_IOC_VERBOSE ioctl.
+
+config KBUS_DEF_NUM_DEVICES
+	int "Number of KBUS devices to auto-create"
+	default 1
+	---help---
+	This specifies the number of KBUS devices that will be automatically
+	created when the kbus subsystem initialises (when the module is 
+	is loaded or the kernel booted, as appropriate).
+
+	If kbus is built as a module, this number may also be given as a
+	parameter, for example kbus_num_devices=5.
+
+config KBUS_MAX_NUM_DEVICES
+	int "Maximum number of KBUS devices"
+	default 256
+	---help---
+	Specify the maximum number of KBUS devices to support.
+	Note that this setting controls the size of an array of pointers
+	to in-kernel kbus structs; reducing it only saves a tiny amount
+	of RAM.
+
+endif # KBUS
 
