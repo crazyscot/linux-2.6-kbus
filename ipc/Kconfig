@@ -38,6 +38,7 @@ config KBUS_DEBUG_DEFAULT_VERBOSE
 config KBUS_DEF_NUM_DEVICES
 	int "Number of KBUS devices to auto-create"
 	default 1
+	range 1 KBUS_MAX_NUM_DEVICES
 	---help---
 	This specifies the number of KBUS devices that will be automatically
 	created when the kbus subsystem initialises (when the module is 
@@ -49,6 +50,10 @@ config KBUS_DEF_NUM_DEVICES
 config KBUS_MAX_NUM_DEVICES
 	int "Maximum number of KBUS devices"
 	default 256
+	range 1 2147483647
+	# We don't impose a limit on the max, so if you've got enough
+	# RAM the only practical limit will be the (int) minor count 
+	# passed to __register_chrdev_region.
 	---help---
 	Specify the maximum number of KBUS devices to support.
 	Note that this setting controls the size of an array of pointers
