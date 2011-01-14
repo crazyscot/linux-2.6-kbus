@@ -31,9 +31,11 @@ config KBUS_DEBUG_DEFAULT_VERBOSE
 	depends on KBUS_DEBUG
 	default n
 	---help---
-	If set, all KBUS devices will emit debugging messages by default.
-	They may be turned off per-device at runtime with the
-	KBUS_IOC_VERBOSE ioctl.
+	This switch is the default setting for whether KBUS devices will
+	emit debugging messages. Note that debug messages may be turned
+	on and off per-device at runtime with the KBUS_IOC_VERBOSE ioctl.
+
+	If unsure, say N.
 
 config KBUS_DEF_NUM_DEVICES
 	int "Number of KBUS devices to auto-create"
@@ -41,7 +43,7 @@ config KBUS_DEF_NUM_DEVICES
 	range 1 KBUS_MAX_NUM_DEVICES
 	---help---
 	This specifies the number of KBUS devices that will be automatically
-	created when the kbus subsystem initialises (when the module is 
+	created when the kbus subsystem initialises (when the module is
 	is loaded or the kernel booted, as appropriate).
 
 	If kbus is built as a module, this number may also be given as a
@@ -52,7 +54,7 @@ config KBUS_MAX_NUM_DEVICES
 	default 256
 	range 1 2147483647
 	# We don't impose a limit on the max, so if you've got enough
-	# RAM the only practical limit will be the (int) minor count 
+	# RAM the only practical limit will be the (int) minor count
 	# passed to __register_chrdev_region.
 	---help---
 	Specify the maximum number of KBUS devices to support.
