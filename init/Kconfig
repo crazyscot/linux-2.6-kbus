@@ -339,6 +339,8 @@ config AUDIT_TREE
 	depends on AUDITSYSCALL
 	select FSNOTIFY
 
+source "ipc/Kconfig"
+
 source "kernel/irq/Kconfig"
 
 menu "RCU Subsystem"
@@ -1187,8 +1189,6 @@ config TRACEPOINTS
 	bool
 
 source "arch/Kconfig"
-
-source "ipc/Kconfig"
 
 endmenu		# General setup
 
