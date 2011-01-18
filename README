@@ -1,5 +1,8 @@
 This is an experimental repository containing the Linux 2.6.x source
 with the KBUS messaging system grafted into it.
 
+N.B. The active branches are all named kbus-something; master points
+to an upstream version.
+
 For more information about KBUS, see http://www.kbus-messaging.org/
 or http://code.google.com/p/kbus/ .
