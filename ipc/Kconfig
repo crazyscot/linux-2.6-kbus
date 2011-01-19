@@ -62,5 +62,38 @@ config KBUS_MAX_NUM_DEVICES
 	to in-kernel kbus structs; reducing it only saves a tiny amount
 	of RAM.
 
+config KBUS_DEF_MAX_MESSAGES
+	int "Default KBUS message queue size limit"
+	default 100
+	range 1 2147483647
+	---help---
+	Specify the default recipient message queue size limit.
+	This default is applied to all recipients (clients) whenever they
+	open or reopen a KBUS device node.
+
+	Clients sending messages may specify their desired behaviour in
+	the event that any of the recipient(s)' message queues is full;
+	if a sender's own queue is full, it may not send a message
+	flagged as a Request.  Refer to the documentation ("Queues filling
+	up") for details.
+
+	Clients may change their own queue size limits at any time with the
+	KBUS_IOC_MAXMSGS ioctl.
+
+config KBUS_MAX_UNSENT_UNBIND_MESSAGES
+	int "Maximum number of unsent KBUS unbind event messages"
+	default 1000
+	range 1 2147483647
+	---help---
+	KBUS devices may request (by ioctl) that they want to receive
+	notifications when listeners unbind. If such a notification happens
+	at a time when the device's message queue is full, it is instead
+	saved internally and delivered later. This setting limits the number
+	of messages which may be queued internally in that way; if the
+	limit is reached, a special "there were more unbind events than
+	we were able to deliver" message is queued for that listener,
+	and no more internal events are sent to them until that message
+	has been delivered.
+
 endif # KBUS
 
