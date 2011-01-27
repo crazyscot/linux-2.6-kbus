@@ -2,14 +2,6 @@
 KBUS -- Lightweight kernel-mediated messaging
 =============================================
 
-.. note:: Earlier versions of KBUS (release tags 0.1 and 0.2) used a shorter
-   message header, and had a start guard of 'kbus' (and corresponding end
-   guard). The current version of KBUS has a start guard of 'Kbus' (and
-   corresponding end guard), so it is not possible to accidentally intermix
-   incompatible messages.
-
-.. contents::
-
 Intention
 =========
 KBUS provides lightweight kernel-mediated messaging for Linux.
@@ -1195,11 +1187,3 @@ of it. For instance::
     On attempting to send 'to' a specific replier, the replier with that id
     is no longer bound to the given message's name.
 
-
-
-.. Local Variables:
-.. tab-width: 8
-.. indent-tabs-mode: nil
-.. c-basic-offset: 2
-.. End:
-.. vim: set filetype=rst tabstop=8 shiftwidth=2 expandtab:
