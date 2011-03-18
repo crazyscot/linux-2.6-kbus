@@ -534,6 +534,36 @@ struct kbus_private_data {
 	 * In fact, the 'outstanding_requests' list is used, simply because
 	 * it was implemented first.
 	 */
+
+	/*
+	 * By default, if a Ksock binds to a message name as both Replier and
+	 * Listener (typically by binding to a specific message name as Replier
+	 * and to a wildcard including it as Listener), and a Reqest of that
+	 * name is sent to that Ksock, it will get the message once as Replier
+	 * (marked "WANT_YOU_TO_REPLY"), and once as listener.
+	 *
+	 * This is technically sensible, but can be irritating to the end user
+	 * who really often only wants to receive the message once.
+	 *
+	 * If "messages_only_once" is set, then when a message is about to be
+	 * put onto a Ksocks message queue, it will only be added if it (i.e.,
+	 * a message with the same id) has not already just been added. This
+	 * is safe because Requests to the specific Replier are always dealt
+	 * with first.
+	 *
+	 * As a side-effect, which I think also makes sense, this will also
+	 * mean that if a Listener has bound to the same message name multiple
+	 * times (as a Listener), then they will only get the message once.
+	 */
+	int messages_only_once;
+	/*
+	 * Messages can be added to either end of our message queue (i.e.,
+	 * depending on whether they're urgent or not). This means that the
+	 * "only once" mechanism needs to check both ends of the queue (which
+	 * is a pain). Or we can just remember the message id of the last
+	 * message pushed onto the queue. Which is much simpler.
+	 */
+	struct kbus_msg_id msg_id_just_pushed;
 };
 
 /* What is a sensible number for the default maximum number of messages? */

@@ -581,13 +581,21 @@ struct kbus_replier_bind_event_data {
  * retval: 0 for success, negative for failure
  */
 #define KBUS_IOC_UNREPLIEDTO _IOR(KBUS_IOC_MAGIC, 13, char *)
-
 /*
- * IOCTL 14 is not used, because it is introduced in the next revision,
- * (obviously, in real history this was done in a different order) and
- * I don't want to alter the number for VERBOSE.
+ * MSGONLYONCE - should we receive a message only once?
+ *
+ * This IOCTL tells a Ksock whether it should only receive a particular message
+ * once, even if it is both a Replier and Listener for the message (in which
+ * case it will always get the message as Replier, if appropriate), or if it is
+ * registered as multiple Listeners for the message.
+ *
+ * arg(in): __u32, 1 to change to "only once", 0 to change to the default,
+ * 0xFFFFFFFF to just return the current/previous state.
+ * arg(out): __u32, the previous state.
+ * retval: 0 for success, negative for failure (-EINVAL if arg in was not one
+ * of the specified values)
  */
-
+#define KBUS_IOC_MSGONLYONCE  _IOWR(KBUS_IOC_MAGIC, 14, char *)
 /*
  * VERBOSE - should KBUS output verbose "printk" messages (for this device)?
  *

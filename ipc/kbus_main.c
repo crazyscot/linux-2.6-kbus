@@ -851,6 +851,46 @@ static int kbus_push_message(struct kbus_private_data *priv,
 		       "  %u Pushing message onto queue (%s)\n",
 		       priv->id, for_replier ? "replier" : "listener");
 
+	/*
+	 * 1. Check to see if this Ksock has the "only one copy
+	 *    of a message" flag set.
+	 * 2. If it does, check if our message (id) is already on
+	 *    the queue, and if it is, just skip adding it.
+	 *
+	 * (this means if the Ksock was destined to get the message
+	 * several times, either as Replier and Listener, or as
+	 * multiple Listeners to the same message name, it will only
+	 * get it once, for this "push")
+	 *
+	 * If "for_replier" is set we necessarily push the message - see below.
+	 */
+	if (priv->messages_only_once && !for_replier) {
+		/*
+		 * 1. We've been asked to only send one copy of a message
+		 *    to each Ksock that should receive it.
+		 * 2. This is not a Reply (to our Ksock) or a Request (to
+		 *    our Ksock as Replier)
+		 *
+		 * So, given that, has a message with that id already been
+		 * added to the message queue?
+		 *
+		 * (Note that if a message would be included because of
+		 * multiple message name bindings, we do not say anything
+		 * about which binding we will actually add the message
+		 * for - so unbinding later on may or may not cause a
+		 * message to go away, in this case.)
+		 */
+		if (kbus_same_message_id(&priv->msg_id_just_pushed,
+					 msg->id.network_id,
+					 msg->id.serial_num)) {
+			kbus_maybe_dbg(priv->dev,
+				       "  %u Ignoring message "
+				       "under 'once only' rule\n",
+				       priv->id);
+			return 0;
+		}
+	}
+
 	new_msg = kbus_copy_message(priv->dev, msg);
 	if (!new_msg)
 		return -EFAULT;
@@ -898,6 +938,7 @@ static int kbus_push_message(struct kbus_private_data *priv,
 	}
 
 	priv->message_count++;
+	priv->msg_id_just_pushed = msg->id;
 
 	if (!kbus_same_message_id(&msg->in_reply_to, 0, 0)) {
 		/*
@@ -3243,6 +3284,36 @@ static int kbus_nummsgs(struct kbus_private_data *priv,
 	return __put_user(count, (u32 __user *) arg);
 }
 
+static int kbus_onlyonce(struct kbus_private_data *priv,
+			 unsigned long arg)
+{
+	int retval = 0;
+	u32 only_once;
+	int old_value = priv->messages_only_once;
+
+	retval = __get_user(only_once, (u32 __user *) arg);
+	if (retval)
+		return retval;
+
+	kbus_maybe_dbg(priv->dev, "%u ONLYONCE requests %u (was %d)\n",
+		       priv->id, only_once, old_value);
+
+	switch (only_once) {
+	case 0:
+		priv->messages_only_once = false;
+		break;
+	case 1:
+		priv->messages_only_once = true;
+		break;
+	case 0xFFFFFFFF:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return __put_user(old_value, (u32 __user *) arg);
+}
+
 static int kbus_set_verbosity(struct kbus_private_data *priv,
 			      unsigned long arg)
 {
@@ -3437,6 +3508,17 @@ static long kbus_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			       id, priv->num_replies_unsent);
 		retval = __put_user(priv->num_replies_unsent,
 				(u32 __user *) arg);
+		break;
+
+	case KBUS_IOC_MSGONLYONCE:
+		/*
+		 * Should we receive a given message only once?
+		 *
+		 * arg in: 0 (for no), 1 (for yes), 0xFFFFFFFF (for query)
+		 * arg out: the previous value, before we were called
+		 * return: 0 means OK, otherwise not OK
+		 */
+		retval = kbus_onlyonce(priv, arg);
 		break;
 
 	case KBUS_IOC_VERBOSE:
