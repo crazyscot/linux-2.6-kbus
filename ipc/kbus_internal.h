@@ -618,6 +618,11 @@ struct kbus_dev {
 
 	/* Are we wanting debugging messages? */
 	u32 verbose;
+
+	/*
+	 * Are we wanting to send a synthetic message for each Replier
+	 * bind/unbind? */
+	u32 report_replier_binds;
 };
 
 /*

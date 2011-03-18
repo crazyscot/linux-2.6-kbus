@@ -1031,6 +1031,203 @@ static void kbus_push_synthetic_message(struct kbus_dev *dev,
 }
 
 /*
+ * Add the data part to a bind/unbind synthetic message.
+ *
+ * 'is_bind' is true if this was a "bind" event, false if it was an "unbind".
+ *
+ * 'name' is the message name (or wildcard) that was bound (or unbound) to.
+ *
+ * Returns 0 if all goes well, or a negative value if something goes wrong.
+ */
+static int kbus_add_bind_message_data(struct kbus_private_data *priv,
+				      struct kbus_msg *new_msg,
+				      u32 is_bind,
+				      u32 name_len, char *name)
+{
+	struct kbus_replier_bind_event_data *data;
+	struct kbus_data_ptr *wrapped_data;
+	u32 padded_name_len = KBUS_PADDED_NAME_LEN(name_len);
+	u32 data_len = sizeof(*data) + padded_name_len;
+	u32 rest_len = padded_name_len / 4;
+	char *name_p;
+
+	unsigned long *parts;
+	unsigned *lengths;
+
+	data = kmalloc(data_len, GFP_KERNEL);
+	if (!data) {
+		kbus_free_message(new_msg);
+		return -ENOMEM;
+	}
+
+	name_p = (char *)&data->rest[0];
+
+	data->is_bind = is_bind;
+	data->binder = priv->id;
+	data->name_len = name_len;
+
+	data->rest[rest_len - 1] = 0;	/* terminating with enough '\0' */
+	strncpy(name_p, name, name_len);
+
+	/*
+	 * And that data, unfortunately for our simple mindedness,
+	 * needs wrapping up in a reference count...
+	 *
+	 * Note/remember that we are happy for the reference counting
+	 * wrapper to "own" our data, and free it when the it is done
+	 * with it.
+	 *
+	 * I'm going to assert that we have less than a PAGE length
+	 * of data, so we can simply do:
+	 */
+	parts = kmalloc(sizeof(*parts), GFP_KERNEL);
+	if (!parts) {
+		kfree(data);
+		return -ENOMEM;
+	}
+	lengths = kmalloc(sizeof(*lengths), GFP_KERNEL);
+	if (!lengths) {
+		kfree(parts);
+		kfree(data);
+		return -ENOMEM;
+	}
+	lengths[0] = data_len;
+	parts[0] = (unsigned long)data;
+	wrapped_data =
+	    kbus_wrap_data_in_ref(false, 1, parts, lengths, data_len);
+	if (!wrapped_data) {
+		kfree(lengths);
+		kfree(parts);
+		kfree(data);
+		return -ENOMEM;
+	}
+
+	new_msg->data_len = data_len;
+	new_msg->data_ref = wrapped_data;
+	return 0;
+}
+
+/*
+ * Create a new Replier Bind Event synthetic message.
+ *
+ * The initial design of things didn't really expect us to be
+ * generating messages with actual data inside the kernel module,
+ * so it's all a little bit more complicated than it might otherwise
+ * be, and there's some playing with things directly that might best
+ * be done otherwise (notably, sorting out the wrapping up of the
+ * data in a reference count). I think that's excusable given this
+ * should be the only sort of message we ever generate with actual
+ * data (or so I believe).
+ *
+ * Returns the new message, or NULL.
+ */
+static struct kbus_msg
+*kbus_new_synthetic_bind_message(struct kbus_private_data *priv,
+				 u32 is_bind,
+				 u32 name_len, char *name)
+{
+	ssize_t retval = 0;
+	struct kbus_msg *new_msg;
+	struct kbus_msg_id in_reply_to = { 0, 0 };	/* no-one */
+
+	kbus_maybe_dbg(priv->dev,
+		       "  Creating synthetic bind message for '%s'"
+		       " (%s)\n", name, is_bind ? "bind" : "unbind");
+
+	new_msg = kbus_build_kbus_message(priv->dev,
+					  KBUS_MSG_NAME_REPLIER_BIND_EVENT,
+					  0, 0, in_reply_to);
+	if (!new_msg)
+		return NULL;
+
+	/*
+	 * What happens if any one of the listeners can't receive the message
+	 * because they don't have room in their queues?
+	 *
+	 * If we flag the message as ALL_OR_FAIL, then if we can't deliver
+	 * to all of the listeners who care, we will get -EBUSY returned to
+	 * us, which we shall then return as -EAGAIN (people expect to check
+	 * for -EAGAIN to find out if they should, well, try again).
+	 *
+	 * In this scenario, the user needs to catch a "bind"/"unbind" return
+	 * of -EAGAIN and realise that it needs to try again.
+	 */
+	new_msg->flags |= KBUS_BIT_ALL_OR_FAIL;
+
+	/*
+	 * That gave us the basis of the message, but now we need to add in
+	 * its meaning.
+	 */
+	retval = kbus_add_bind_message_data(priv, new_msg, is_bind,
+					    name_len, name);
+	if (retval < 0) {
+		kbus_free_message(new_msg);
+		return NULL;
+	}
+
+	return new_msg;
+}
+
+/*
+ * Generate a bind/unbind synthetic message, and broadcast it.
+ *
+ * This is for use when we have been asked to announce when a Replier binds or
+ * unbinds.
+ *
+ * 'priv' is the sender - the entity that is doing the actual bind/unbind.
+ *
+ * 'is_bind' is true if this was a "bind" event, false if it was an "unbind".
+ *
+ * 'name' is the message name (or wildcard) that was bound (or unbound) to.
+ *
+ * Returns 0 if all goes well, or a negative value if something goes wrong,
+ * notably -EAGAIN if we couldn't send the message to ALL the Listeners who
+ * have bound to receive it.
+ */
+static int kbus_push_synthetic_bind_message(struct kbus_private_data *priv,
+					    u32 is_bind,
+					    u32 name_len, char *name)
+{
+
+	ssize_t retval = 0;
+	struct kbus_msg *new_msg;
+
+	kbus_maybe_dbg(priv->dev,
+		       "  Pushing synthetic bind message for '%s'"
+		       " (%s) onto queue\n", name,
+		       is_bind ? "bind" : "unbind");
+
+	new_msg =
+	    kbus_new_synthetic_bind_message(priv, is_bind, name_len, name);
+	if (new_msg == NULL)
+		return -ENOMEM;
+
+	kbus_maybe_report_message(priv->dev, new_msg);
+	kbus_maybe_dbg(priv->dev,
+		       "Writing synthetic message to "
+		       "recipients\n");
+
+	retval = kbus_write_to_recipients(priv, priv->dev, new_msg);
+	/*
+	 * kbus_push_message takes a copy of our message data, so we
+	 * must remember to free ours. Since we've made sure that it
+	 * looks just like a user-generated message (i.e., the name
+	 * can be freed as well as the data), this is fairly simple.
+	 */
+	kbus_free_message(new_msg);
+
+	/*
+	 * Because we used ALL_OR_FAIL, we will get -EBUSY back if we FAIL,
+	 * but we want to tell the user -EAGAIN, since they *should* try
+	 * again later.
+	 */
+	if (retval == -EBUSY)
+		retval = -EAGAIN;
+
+	return retval;
+}
+
+/*
  * Pop the next message off our queue.
  *
  * Returns a pointer to the message, or NULL if there is no next message.
@@ -1442,6 +1639,21 @@ static int kbus_remember_binding(struct kbus_dev *dev,
 	new->name_len = name_len;
 	new->name = name;
 
+	if (replier && dev->report_replier_binds) {
+		/*
+		 * We've been asked to announce when a Replier binds.
+		 * If we can't tell all the Listeners who care, we want
+		 * to give up, rather than tell some of them, and then
+		 * bind anyway.
+		 */
+		retval = kbus_push_synthetic_bind_message(priv, true,
+							  name_len, name);
+		if (retval != 0) {	/* Hopefully, just -EBUSY */
+			kfree(new);
+			return retval;
+		}
+	}
+
 	list_add(&new->list, &dev->bound_message_list);
 	return 0;
 }
@@ -1561,6 +1773,27 @@ static int kbus_forget_binding(struct kbus_dev *dev,
 		return -EINVAL;
 	}
 
+	if (replier && dev->report_replier_binds) {
+
+		/*
+		 * We want to send a message indicating that we've unbound
+		 * the Replier for this message.
+		 *
+		 * If we can't tell all the Listeners who're listening for this
+		 * message, we want to give up, rather then tell some of them,
+		 * and then unbind anyway.
+		 */
+		int retval = kbus_push_synthetic_bind_message(priv, false,
+							      name_len, name);
+		if (retval != 0)	/* Hopefully, just -EBUSY */
+			return retval;
+		/*
+		 * Note that if we were ourselves listening for replier bind
+		 * events, then we will ourselves get the message announcing
+		 * we're about to unbind.
+		 */
+	}
+
 	kbus_maybe_dbg(priv->dev, "  %u Unbound %u %c '%.*s'\n",
 		       priv->id, binding->bound_to_id,
 		       (binding->is_replier ? 'R' : 'L'),
@@ -1582,6 +1815,49 @@ static int kbus_forget_binding(struct kbus_dev *dev,
 	kfree(binding->name);
 	kfree(binding);
 	return 0;
+}
+
+
+/*
+ * Report a Replier Bind Event for unbinding from the given message name
+ */
+static void kbus_report_unbinding(struct kbus_private_data *priv,
+				  u32 name_len, char *name)
+{
+	struct kbus_msg *msg;
+	int retval;
+
+	kbus_maybe_dbg(priv->dev,
+		       "  %u Safe report unbinding of '%.*s'\n",
+		       priv->id, name_len, name);
+
+	/* Generate the "X has unbound from Y" message */
+	msg = kbus_new_synthetic_bind_message(priv, false, name_len, name);
+	if (msg == NULL)
+		return;	/* There is nothing sensible to do here */
+
+	/* ...and send it */
+	retval = kbus_write_to_recipients(priv, priv->dev, msg);
+	if (retval != -EBUSY)
+		goto done_sending;
+
+	/*
+	 * If someone who had bound to it wasn't able to take the message,
+	 * then there's not a lot we can do at this stage.
+	 *
+	 * XXX This is, of course, unacceptable. Sorting it out will
+	 * XXX be done in the next tranch of code, though, since it
+	 * XXX is not terribly simple.
+	 */
+	kbus_maybe_dbg(priv->dev,
+		       "  %u Someone was unable to receive message '%*s'\n",
+		       priv->id, name_len, name);
+
+done_sending:
+	/* Don't forget to free our copy of the message */
+	if (msg)
+		kbus_free_message(msg);
+	/* We aren't returning any status code. Oh well. */
 }
 
 /*
@@ -1607,6 +1883,10 @@ static void kbus_forget_my_bindings(struct kbus_private_data *priv)
 		kbus_maybe_dbg(dev, "  Unbound %u %c '%.*s'\n",
 			       ptr->bound_to_id, (ptr->is_replier ? 'R' : 'L'),
 			       ptr->name_len, ptr->name);
+
+		if (ptr->is_replier && dev->report_replier_binds)
+			kbus_report_unbinding(priv, ptr->name_len,
+					      ptr->name);
 
 		list_del(&ptr->list);
 		kfree(ptr->name);
@@ -2624,6 +2904,14 @@ static int kbus_bind(struct kbus_private_data *priv,
 		goto done;
 	}
 
+	if (bind->is_replier && !strcmp(name,
+					KBUS_MSG_NAME_REPLIER_BIND_EVENT)) {
+		kbus_maybe_dbg(priv->dev, "cannot bind %s as a Replier\n",
+			       KBUS_MSG_NAME_REPLIER_BIND_EVENT);
+		retval = -EBADMSG;
+		goto done;
+	}
+
 	kbus_maybe_dbg(priv->dev, "%u BIND %c '%.*s'\n", priv->id,
 		       (bind->is_replier ? 'R' : 'L'), bind->name_len, name);
 
@@ -3353,6 +3641,83 @@ static int kbus_set_verbosity(struct kbus_private_data *priv,
 	return __put_user(old_value, (u32 __user *) arg);
 }
 
+/* Report all existing replier bindings to the requester */
+static int kbus_report_existing_binds(struct kbus_private_data *priv,
+				      struct kbus_dev *dev)
+{
+	struct kbus_message_binding *ptr;
+	struct kbus_message_binding *next;
+
+	list_for_each_entry_safe(ptr, next, &dev->bound_message_list, list) {
+		struct kbus_msg *new_msg;
+		int retval;
+
+		kbus_maybe_dbg(priv->dev, "  %u Report %c '%.*s'\n",
+		       priv->id, (ptr->is_replier ? 'R' : 'L'),
+		       ptr->name_len, ptr->name);
+
+		if (!ptr->is_replier)
+			continue;
+
+		new_msg = kbus_new_synthetic_bind_message(ptr->bound_to, true,
+						  ptr->name_len, ptr->name);
+		if (new_msg == NULL)
+			return -ENOMEM;
+
+		/*
+		 * It is perhaps a bit inefficient to check this per binding,
+		 * but it saves us doing two passes through the list.
+		 */
+		if (kbus_queue_is_full(priv, "limpet", false)) {
+			/* Giving up is probably the best we can do */
+			kbus_free_message(new_msg);
+			return -EBUSY;
+		}
+
+		retval = kbus_push_message(priv, new_msg, NULL, false);
+
+		kbus_free_message(new_msg);
+		if (retval)
+			return retval;
+	}
+	return 0;
+}
+
+static int kbus_set_report_binds(struct kbus_private_data *priv,
+				 struct kbus_dev *dev, unsigned long arg)
+{
+	int retval = 0;
+	u32 report_replier_binds;
+	int old_value = priv->dev->report_replier_binds;
+
+	retval = __get_user(report_replier_binds, (u32 __user *) arg);
+	if (retval)
+		return retval;
+
+	kbus_maybe_dbg(priv->dev,
+		       "%u REPORTREPLIERBINDS requests %u (was %d)\n",
+		       priv->id, report_replier_binds, old_value);
+
+	switch (report_replier_binds) {
+	case 0:
+		priv->dev->report_replier_binds = false;
+		break;
+	case 1:
+		priv->dev->report_replier_binds = true;
+		/* And report the current state of bindings... */
+		retval = kbus_report_existing_binds(priv, dev);
+		if (retval)
+			return retval;
+		break;
+	case 0xFFFFFFFF:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return __put_user(old_value, (u32 __user *) arg);
+}
+
 static long kbus_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int err = 0;
@@ -3547,6 +3912,17 @@ static long kbus_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retval = __put_user(kbus_num_devices - 1,
 				       (u32 __user *) arg);
 		}
+		break;
+
+	case KBUS_IOC_REPORTREPLIERBINDS:
+		/*
+		 * Should we report Replier bind/unbind events?
+		 *
+		 * arg in: 0 (for no), 1 (for yes), 0xFFFFFFFF (for query)
+		 * arg out: the previous value, before we were called
+		 * return: 0 means OK, otherwise not OK
+		 */
+		retval = kbus_set_report_binds(priv, dev, arg);
 		break;
 
 	default:

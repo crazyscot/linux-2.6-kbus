@@ -489,6 +489,19 @@ struct kbus_replier_bind_event_data {
 #define KBUS_MSG_NAME_REPLIER_DISAPPEARED	"$.KBUS.Replier.Disappeared"
 #define KBUS_MSG_NAME_ERROR_SENDING		"$.KBUS.ErrorSending"
 
+/*
+ * Replier Bind Event
+ * ------------------
+ * This is the only message name for which KBUS generates data -- see
+ * kbus_replier_bind_event_data. It is also the only message name which KBUS
+ * does not allow binding to as a Replier.
+ *
+ * This is the message that is sent when a Replier binds or unbinds to another
+ * message name, if the KBUS_IOC_REPORTREPLIERBINDS ioctl has been used to
+ * request such notification.
+ */
+#define KBUS_MSG_NAME_REPLIER_BIND_EVENT	"$.KBUS.ReplierBindEvent"
+
 #define KBUS_IOC_MAGIC	'k'	/* 0x6b - which seems fair enough for now */
 /*
  * RESET: reserved for future use
@@ -621,8 +634,23 @@ struct kbus_replier_bind_event_data {
  */
 #define KBUS_IOC_NEWDEVICE _IOR(KBUS_IOC_MAGIC, 16, char *)
 
+/*
+ * REPORTREPLIERBINDS - request synthetic messages announcing Replier
+ * bind/unbind events.
+ *
+ * If this flag is set, then when someone binds or unbinds to a message name as
+ * a Replier, KBUS will send out a synthetic Announcement of this fact.
+ *
+ * arg(in): __u32, 1 to change to "report", 0 to change to "do not report",
+ * 0xFFFFFFFF to just return the current/previous state.
+ * arg(out): __u32, the previous state.
+ * retval: 0 for success, negative for failure (-EINVAL if arg in was not one
+ * of the specified values)
+ */
+#define KBUS_IOC_REPORTREPLIERBINDS  _IOWR(KBUS_IOC_MAGIC, 17, char *)
+
 /* If adding another IOCTL, remember to increment the next number! */
-#define KBUS_IOC_MAXNR	16
+#define KBUS_IOC_MAXNR	17
 
 #if !__KERNEL__ && defined(__cplusplus)
 }
