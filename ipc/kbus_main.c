@@ -3532,6 +3532,23 @@ static long kbus_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		retval = kbus_set_verbosity(priv, arg);
 		break;
 
+	case KBUS_IOC_NEWDEVICE:
+		/*
+		 * Request a new device
+		 *
+		 * arg out: the new device number
+		 * return: 0 means OK, otherwise not OK.
+		 */
+		kbus_maybe_dbg(priv->dev, "%u NEWDEVICE %d\n",
+			       id, kbus_num_devices);
+		retval = kbus_setup_new_device(kbus_num_devices);
+		if (retval > 0) {
+			kbus_num_devices++;
+			retval = __put_user(kbus_num_devices - 1,
+				       (u32 __user *) arg);
+		}
+		break;
+
 	default:
 		/* *Should* be redundant, if we got our range checks right */
 		retval = -ENOTTY;

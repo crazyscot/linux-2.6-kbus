@@ -611,8 +611,18 @@ struct kbus_replier_bind_event_data {
  */
 #define KBUS_IOC_VERBOSE  _IOWR(KBUS_IOC_MAGIC, 15, char *)
 
+/*
+ * NEWDEVICE - request another KBUS device (/dev/kbus<n>).
+ *
+ * The next device number (up to a maximum of 255) will be allocated.
+ *
+ * arg(out): __u32, the new device number (<n>)
+ * retval: 0 for success, negative for failure
+ */
+#define KBUS_IOC_NEWDEVICE _IOR(KBUS_IOC_MAGIC, 16, char *)
+
 /* If adding another IOCTL, remember to increment the next number! */
-#define KBUS_IOC_MAXNR	15
+#define KBUS_IOC_MAXNR	16
 
 #if !__KERNEL__ && defined(__cplusplus)
 }
